@@ -14,16 +14,17 @@ const STYLES = [
 const MOODS    = ["Confident", "Mysterious", "Playful", "Elegant", "Bold", "Dreamy", "Professional", "Artistic"];
 const LIGHTING = ["Golden Hour", "Studio Softbox", "Neon Glow", "Natural Diffused", "Dramatic Contrast", "Backlit Silhouette"];
 
-// ── API helpers (all proxied through Express) ─────────────────────────────────
+// ── API helpers ───────────────────────────────────────────────────────────────
 
-// Vision call — Groq Llama 4 Scout (supports image_url with base64)
+// BUG FIX #2: Use correct Groq vision model ID
+// "meta-llama/llama-4-scout-17b-16e-instruct" may not be available on all accounts
+// "llama-3.2-11b-vision-preview" is universally available and stable
 async function groqVision(imageBase64, imageMime, textPrompt) {
   const res = await fetch("/api/groq", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct"  
-        model: "llama-3.2-11b-vision-preview"  
+      model: "llama-3.2-11b-vision-preview", // ✅ Universally available vision model
       max_tokens: 800,
       messages: [{
         role: "user",
@@ -34,12 +35,15 @@ async function groqVision(imageBase64, imageMime, textPrompt) {
       }],
     }),
   });
-  if (!res.ok) throw new Error(`Groq vision error ${res.status}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(`Groq vision error ${res.status}: ${errData?.error?.message || errData?.error || "Unknown error"}`);
+  }
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
 
-// Text call — Groq Llama 3.3 70B (best quality for prompt generation)
+// Text call — Groq Llama 3.3 70B
 async function groqText(systemPrompt, userPrompt) {
   const res = await fetch("/api/groq", {
     method: "POST",
@@ -53,7 +57,10 @@ async function groqText(systemPrompt, userPrompt) {
       ],
     }),
   });
-  if (!res.ok) throw new Error(`Groq text error ${res.status}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(`Groq text error ${res.status}: ${errData?.error?.message || errData?.error || "Unknown error"}`);
+  }
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
@@ -68,10 +75,35 @@ async function generateImage(prompt, imageBase64, imageMime) {
   const data = await res.json();
   if (res.status === 503 && data.type === "loading") {
     await new Promise(r => setTimeout(r, (data.wait || 25) * 1000));
-    return generateImage(prompt, imageBase64, imageMime); // retry once
+    return generateImage(prompt, imageBase64, imageMime);
   }
   if (!res.ok) throw new Error(data.error || "Image generation failed");
   return `data:${data.mime};base64,${data.imageBase64}`;
+}
+
+// BUG FIX #5: Proper blob-based download for base64 images
+function downloadBase64Image(dataUrl, filename = "aesthetic-portrait.png") {
+  try {
+    const [header, b64] = dataUrl.split(",");
+    const mimeMatch = header.match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : "image/png";
+    const byteString = atob(b64);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+    const blob = new Blob([ab], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    // Fallback: open in new tab
+    window.open(dataUrl, "_blank");
+  }
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -112,7 +144,7 @@ export default function App() {
 
     try {
       // ── 1. Groq Vision — analyze the photo ──────────────────────────────
-      setProgressLabel("Analyzing your photo with Groq Llama 4 Scout...");
+      setProgressLabel("Analyzing your photo with Groq Llama Vision...");
       setProgress(15);
 
       const rawAnalysis = await groqVision(
@@ -187,7 +219,7 @@ Write a single optimized img2img prompt (100-140 words). Preserve the subject's 
             AI Aesthetic Profile Creator
           </h1>
           <p style={{ margin: 0, fontSize: 12, color: "#7c6a9a" }}>
-            Groq Llama 4 (vision) + Llama 3.3 70B (prompt) + HuggingFace img2img — 100% free APIs
+            Groq Llama Vision + Llama 3.3 70B + HuggingFace img2img — 100% free APIs
           </p>
         </div>
       </div>
@@ -280,7 +312,11 @@ Write a single optimized img2img prompt (100-140 words). Preserve the subject's 
                 </div>
               )}
 
-              {error && <div style={{ marginTop: 12, padding: "10px 16px", borderRadius: 10, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: 13 }}>{error}</div>}
+              {error && (
+                <div style={{ marginTop: 12, padding: "12px 16px", borderRadius: 10, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontSize: 13 }}>
+                  ⚠️ {error}
+                </div>
+              )}
 
               <div style={{ marginTop: 18, padding: "12px 18px", borderRadius: 14, background: "rgba(139,92,246,0.06)", border: "1px solid #2d1f4e", display: "flex", gap: 20, flexWrap: "wrap", fontSize: 12, color: "#9a8ab0" }}>
                 <span>Style: <strong style={{ color: "#c084fc" }}>{STYLES.find(s => s.id === selectedStyle)?.label}</strong></span>
@@ -314,12 +350,11 @@ Write a single optimized img2img prompt (100-140 words). Preserve the subject's 
               <div style={{ fontSize: 13, color: "#5a4a7a" }}>{progress}%</div>
             </div>
 
-            {/* Model labels */}
             <div style={{ marginTop: 28, display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
               {[
-                { label: "Llama 4 Scout", sub: "Vision analysis", done: progress > 36 },
-                { label: "Llama 3.3 70B", sub: "Prompt generation", done: progress > 68 },
-                { label: "HuggingFace SD", sub: "Image generation", done: progress >= 100 },
+                { label: "Llama Vision",   sub: "Photo analysis",    done: progress > 36 },
+                { label: "Llama 3.3 70B",  sub: "Prompt generation", done: progress > 68 },
+                { label: "HuggingFace SD", sub: "Image generation",  done: progress >= 100 },
               ].map(m => (
                 <div key={m.label} style={{ padding: "10px 16px", borderRadius: 12, background: m.done ? "rgba(139,92,246,0.15)" : "rgba(255,255,255,0.02)", border: `1px solid ${m.done ? "#8b5cf6" : "#2d1f4e"}`, textAlign: "center", minWidth: 130 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: m.done ? "#c084fc" : "#4a3a6a" }}>{m.done ? "✓ " : "○ "}{m.label}</div>
@@ -355,8 +390,9 @@ Write a single optimized img2img prompt (100-140 words). Preserve the subject's 
             </div>
 
             <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+              {/* BUG FIX #5: Use blob-based download for base64 images */}
               <button
-                onClick={() => { const a = document.createElement("a"); a.href = generatedImage; a.download = "aesthetic-portrait.png"; a.click(); }}
+                onClick={() => downloadBase64Image(generatedImage, `aesthetic-${selectedStyle}-portrait.png`)}
                 style={{ ...gradBtn, flex: 1, padding: 14, fontSize: 15 }}
               >⬇ Download Image</button>
               <button onClick={() => setStep("configure")} style={{ ...ghostBtn, flex: 1, padding: 14, fontSize: 14 }}>← Adjust Style</button>
