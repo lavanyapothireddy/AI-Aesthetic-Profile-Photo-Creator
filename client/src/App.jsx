@@ -16,15 +16,14 @@ const LIGHTING = ["Golden Hour", "Studio Softbox", "Neon Glow", "Natural Diffuse
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-// BUG FIX #2: Use correct Groq vision model ID
-// "meta-llama/llama-4-scout-17b-16e-instruct" may not be available on all accounts
-// "llama-3.2-11b-vision-preview" is universally available and stable
+// Groq vision model — meta-llama/llama-4-scout-17b-16e-instruct
+// llama-3.2-11b-vision-preview was decommissioned April 2025; Llama 4 Scout is the official replacement
 async function groqVision(imageBase64, imageMime, textPrompt) {
   const res = await fetch("/api/groq", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "llama-3.2-11b-vision-preview", // ✅ Universally available vision model
+      model: "meta-llama/llama-4-scout-17b-16e-instruct", // ✅ Groq's current vision model (replaces deprecated llama-3.2-11b-vision-preview)
       max_tokens: 800,
       messages: [{
         role: "user",
