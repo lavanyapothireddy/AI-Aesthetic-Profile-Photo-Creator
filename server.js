@@ -77,7 +77,9 @@ app.post("/api/generate-image", async (req, res) => {
     const hfRes = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.HF_API_KEY}`,
+        const key = process.env.GROQ_API_KEY?.trim();
+        if (!key) return res.status(500).json({ error: "GROQ_API_KEY is not set on the server." });
+    Authorization: `Bearer ${key}`,
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
         "Content-Length": body.length,
       },
