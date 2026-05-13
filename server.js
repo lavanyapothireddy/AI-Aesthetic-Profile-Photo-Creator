@@ -72,7 +72,7 @@ app.post("/api/generate-image", async (req, res) => {
       Buffer.from(closing, "utf8"),
     ]);
 
-    const HF_MODEL = process.env.HF_MODEL || "stabilityai/stable-diffusion-xl-refiner-1.0";
+    const HF_MODEL = process.env.HF_MODEL || "runwayml/stable-diffusion-v1-5";
 
     const hfRes = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
       method: "POST",
@@ -96,7 +96,8 @@ app.post("/api/generate-image", async (req, res) => {
       return res.status(hfRes.status).json({ error: errText.slice(0, 300) });
     }
 
-    const imageBuffer = await hfRes.buffer();
+    const arrayBuffer = await hfRes.arrayBuffer();
+const imageBuffer = Buffer.from(arrayBuffer);
     const mime = hfRes.headers.get("content-type") || "image/png";
     res.json({ imageBase64: imageBuffer.toString("base64"), mime });
   } catch (err) {
@@ -109,5 +110,5 @@ app.get("*", (_, res) =>
   res.sendFile(path.join(__dirname, "client/dist/index.html"))
 );
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 7860;
 app.listen(PORT, () => console.log(`Server on port ${PORT}`));
