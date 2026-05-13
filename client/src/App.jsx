@@ -65,16 +65,16 @@ async function groqText(systemPrompt, userPrompt) {
 }
 
 // HuggingFace img2img (with cold-start retry)
-async function generateImage(prompt, imageBase64, imageMime) {
+async function generateImage(prompt) {
   const res = await fetch("/api/generate-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, imageBase64, imageMime }),
+    body: JSON.stringify({ prompt }),
   });
   const data = await res.json();
   if (res.status === 503 && data.type === "loading") {
     await new Promise(r => setTimeout(r, (data.wait || 25) * 1000));
-    return generateImage(prompt, imageBase64, imageMime);
+    return generateImage(prompt);
   }
   if (!res.ok) throw new Error(data.error || "Image generation failed");
   return `data:${data.mime};base64,${data.imageBase64}`;
@@ -182,7 +182,7 @@ Write a single optimized img2img prompt (100-140 words). Preserve the subject's 
       setProgressLabel("Generating your aesthetic image on HuggingFace...");
       setProgress(76);
 
-      const imageDataUrl = await generateImage(finalPrompt, imageBase64, imageMime);
+      const imageDataUrl = await generateImage(finalPrompt);
       setGeneratedImage(imageDataUrl);
 
       setProgress(100);
